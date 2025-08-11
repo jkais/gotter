@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type Config struct {
@@ -12,11 +13,13 @@ type Config struct {
 	City   string `json:"city"`
 }
 
-func loadConfig() (*Config, error) {
+func getConfigPath() string {
 	homeDir, _ := os.UserHomeDir()
-	configPath := filepath.Join(homeDir, ".config", "gotter", "config.json")
+	return filepath.Join(homeDir, ".config", "gotter", "config.json")
+}
 
-	file, err := os.Open(configPath)
+func loadConfig() (*Config, error) {
+	file, err := os.Open(getConfigPath())
 	if err != nil {
 		return nil, err
 	}
@@ -25,6 +28,43 @@ func loadConfig() (*Config, error) {
 	var config Config
 	err = json.NewDecoder(file).Decode(&config)
 	return &config, err
+}
+
+type Cache struct {
+	Timestamp int64  `json:"timestamp"`
+	Response  string `json:"response"`
+}
+
+func getCachePath() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".config", "gotter", "cache.json")
+}
+
+func ensureCacheFile() {
+	cachePath := getCachePath()
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		cache := Cache{Timestamp: 0, Response: ""}
+		data, _ := json.MarshalIndent(cache, "", "  ")
+		os.WriteFile(cachePath, data, 0644)
+	}
+}
+
+func needsUpdate() bool {
+	cachePath := getCachePath()
+
+	file, err := os.Open(cachePath)
+	if err != nil {
+		return true
+	}
+	defer file.Close()
+
+	var cache Cache
+	err = json.NewDecoder(file).Decode(&cache)
+	if err != nil {
+		return true
+	}
+
+	return time.Now().Unix() - cache.Timestamp > 600
 }
 
 func getWeatherIcon(iconCode string) string {
@@ -51,6 +91,9 @@ func main() {
 		fmt.Println("Config error:", err)
 		return
 	}
+
+	ensureCacheFile()
+
 	apiKey := config.ApiKey
 	city := config.City
 
