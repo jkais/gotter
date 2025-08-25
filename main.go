@@ -2,6 +2,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,26 +14,23 @@ type Config struct {
 	City   string `json:"city"`
 }
 
+type Cache struct {
+	Timestamp int64  `json:"timestamp"`
+	Response  map[string]interface{} `json:"response"`
+}
+
 func getConfigPath() string {
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".config", "gotter", "config.json")
 }
 
-func loadConfig() (*Config, error) {
-	file, err := os.Open(getConfigPath())
-	if err != nil {
-		return nil, err
-	}
+func loadConfig() *Config {
+	file, _ := os.Open(getConfigPath())
 	defer file.Close()
 
 	var config Config
-	err = json.NewDecoder(file).Decode(&config)
-	return &config, err
-}
-
-type Cache struct {
-	Timestamp int64  `json:"timestamp"`
-	Response  string `json:"response"`
+	json.NewDecoder(file).Decode(&config)
+	return &config
 }
 
 func getCachePath() string {
@@ -43,28 +41,26 @@ func getCachePath() string {
 func ensureCacheFile() {
 	cachePath := getCachePath()
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
-		cache := Cache{Timestamp: 0, Response: ""}
+		cache := Cache{Timestamp: 0, Response: make(map[string]interface{})}
 		data, _ := json.MarshalIndent(cache, "", "  ")
 		os.WriteFile(cachePath, data, 0644)
 	}
 }
 
-func needsUpdate() bool {
+func getCacheData() Cache {
+	ensureCacheFile()
 	cachePath := getCachePath()
 
-	file, err := os.Open(cachePath)
-	if err != nil {
-		return true
-	}
+	file, _ := os.Open(cachePath)
 	defer file.Close()
 
 	var cache Cache
-	err = json.NewDecoder(file).Decode(&cache)
-	if err != nil {
-		return true
-	}
+	json.NewDecoder(file).Decode(&cache)
+	return cache
+}
 
-	return time.Now().Unix() - cache.Timestamp > 600
+func needsUpdate() bool {
+	return time.Now().Unix() - getCacheData().Timestamp > 600
 }
 
 func getWeatherIcon(iconCode string) string {
@@ -85,37 +81,47 @@ func getWeatherIcon(iconCode string) string {
 	return "🌡️" // fallback
 }
 
+func getCurrentWeather() map[string]interface{} {
+	if needsUpdate() {
+		config := loadConfig()
+
+		apiKey := config.ApiKey
+		city := config.City
+
+		url := fmt.Sprintf("https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s&units=metric", city, apiKey)
+
+		resp, _ := http.Get(url)
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		setCache(string(body))
+	}
+
+	return getCache()
+}
+
+func setCache(jsonResponse string) {
+	var responseData map[string]interface{}
+	json.Unmarshal([]byte(jsonResponse), &responseData)
+	prettyResponse, _ := json.MarshalIndent(responseData, "  ", "  ")
+
+	cache := fmt.Sprintf(`{
+		"timestamp": %d,
+		"response": %s
+		}`, time.Now().Unix(), string(prettyResponse))
+
+	os.WriteFile(getCachePath(), []byte(cache), 0644)
+}
+
+func getCache() map[string]interface{} {
+	cache := getCacheData()
+	return cache.Response
+}
+
 func main() {
-	config, err := loadConfig()
-	if err != nil {
-		fmt.Println("Config error:", err)
-		return
-	}
+	var weather = getCurrentWeather()
 
-	ensureCacheFile()
-
-	apiKey := config.ApiKey
-	city := config.City
-
-	url := fmt.Sprintf("https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s&units=metric", city, apiKey)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Println("HTTP error:", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		fmt.Printf("API error: Status %d\n", resp.StatusCode)
-		return
-	}
-
-	var data map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&data)
-
-	temp := data["main"].(map[string]interface{})["temp"].(float64)
-	icon := data["weather"].([]interface{})[0].(map[string]interface{})["icon"].(string)
+	temp := weather["main"].(map[string]interface{})["temp"].(float64)
+	icon := weather["weather"].([]interface{})[0].(map[string]interface{})["icon"].(string)
 
 	fmt.Printf("%.0f°C %s", temp, getWeatherIcon(icon))
 }
