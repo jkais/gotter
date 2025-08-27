@@ -1,4 +1,5 @@
 package main
+
 import (
 	"fmt"
 )
@@ -24,8 +25,8 @@ func getWeatherIcon(iconCode string) string {
 func main() {
 	var weather = getCurrentWeather()
 
-	temp := weather["main"].(map[string]interface{})["temp"].(float64)
-	icon := weather["weather"].([]interface{})[0].(map[string]interface{})["icon"].(string)
+	temp := weather["main"].(map[string]any)["temp"].(float64)
+	icon := weather["weather"].([]any)[0].(map[string]any)["icon"].(string)
 
 	fmt.Printf("%.0f°C %s", temp, getWeatherIcon(icon))
 }

@@ -8,7 +8,6 @@ import (
 
 type Config struct {
 	ApiKey string `json:"api_key"`
-	City   string `json:"city"`
 }
 
 func getConfigPath() string {

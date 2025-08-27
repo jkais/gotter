@@ -9,8 +9,8 @@ import (
 )
 
 type Cache struct {
-	Timestamp int64                 `json:"timestamp"`
-	Response  map[string]interface{} `json:"response"`
+	Timestamp int64 `json:"timestamp"`
+	Response  map[string]any `json:"response"`
 }
 
 func getCachePath() string {
@@ -21,7 +21,7 @@ func getCachePath() string {
 func ensureCacheFile() {
 	cachePath := getCachePath()
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
-		cache := Cache{Timestamp: 0, Response: make(map[string]interface{})}
+		cache := Cache{Timestamp: 0, Response: make(map[string]any)}
 		data, _ := json.MarshalIndent(cache, "", "  ")
 		os.WriteFile(cachePath, data, 0644)
 	}
@@ -38,11 +38,11 @@ func getCacheData() Cache {
 }
 
 func needsUpdate() bool {
-	return time.Now().Unix()-getCacheData().Timestamp > 600
+	return time.Now().Unix() - getCacheData().Timestamp > 600
 }
 
 func setCache(jsonResponse string) {
-	var responseData map[string]interface{}
+	var responseData map[string]any
 	json.Unmarshal([]byte(jsonResponse), &responseData)
 	prettyResponse, _ := json.MarshalIndent(responseData, "  ", "  ")
 	cache := fmt.Sprintf(`{
@@ -52,7 +52,7 @@ func setCache(jsonResponse string) {
 	os.WriteFile(getCachePath(), []byte(cache), 0644)
 }
 
-func getCache() map[string]interface{} {
+func getCache() map[string]any {
 	cache := getCacheData()
 	return cache.Response
 }
